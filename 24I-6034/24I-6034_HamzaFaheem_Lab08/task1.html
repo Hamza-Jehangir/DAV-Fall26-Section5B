@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lab 8 -- Task 1: UN Richest Countries</title>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', 'Tahoma', 'Geneva', 'Verdana', 'sans-serif';
+      margin: 30px;
+      background-color: #f9fafb;
+      color: #1f2937;
+    }
+    h2 {margin-bottom: 5px;}
+    .controls {margin: 15px 0;}
+    button {
+      padding: 8px 18px;
+      margin-right: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      background-color: #ffffff;
+      transition: all 0.2s;
+    }
+    button.active, button:hover {
+      background-color: #2563eb;
+      color: white;
+      border-color: #2563eb;
+    }
+    .legend {
+      display: flex;
+      gap: 18px;
+      margin-bottom: 10px;
+      font-size: 13px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+    }
+    #tooltip {
+      position: absolute;
+      opacity: 0;
+      background: rgba(17, 24, 39, 0.92);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      pointer-events: none;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+      transition: opacity 0.15s ease;
+    }
+    rect.bar {cursor: pointer;}
+    rect.bar:hover {filter: brightness(0.88);}
+  </style>
+</head>
+<body>
+
+  <h2>Top 10 Richest Countries by GDP per Capita (<span id="year-label">2007</span>)</h2>
+  
+  <div class="controls">
+    <button id="btn-2007" class="active">2007</button>
+    <button id="btn-1952">1952</button>
+  </div>
+
+  <div class="legend" id="legend"></div>
+  <svg id="chart" width="800" height="460"></svg>
+  <div id="tooltip"></div>
+
+  <script>
+    const svg = d3.select("#chart");
+    const margin = { top: 20, right: 40, bottom: 50, left: 130 };
+    const width = +svg.attr("width") - margin.left - margin.right;
+    const height = +svg.attr("height") - margin.top - margin.bottom;
+
+    const g = svg.append("g")
+      .attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const x = d3.scaleLinear().range([0, width]);
+    const y = d3.scaleBand().range([0, height]).padding(0.2);
+
+    const continents = ["Europe", "Asia", "Americas", "Oceania", "Africa"];
+    const color = d3.scaleOrdinal().domain(continents).range(["#3b82f6", "#ef4444", "#10b981", "#f59e0b", "#8b5cf6"]);
+
+    const legendContainer = d3.select("#legend");
+    continents.forEach(cont => {
+      const item = legendContainer.append("div").attr("class", "legend-item");
+      item.append("div").attr("class", "legend-swatch").style("background-color", color(cont));
+      item.append("span").text(cont);
+    });
+
+    const xAxisGroup = g.append("g").attr("transform", `translate(0,${height})`);
+    const yAxisGroup = g.append("g");
+
+    g.append("text").attr("x", width / 2).attr("y", height + 40).attr("text-anchor", "middle").attr("font-size", "13px").attr("fill", "#4b5563").text("GDP per Capita (USD, inflation-adjusted)");
+    const tooltip = d3.select("#tooltip");
+
+    d3.csv("dataset/gapminder.csv", d3.autoType).then(rawData => {
+
+      function updateChart(selectedYear) {
+        d3.select("#year-label").text(selectedYear);
+
+        const top10 = rawData.filter(d => d.year === selectedYear).sort((a, b) => d3.descending(a.gdpPercap, b.gdpPercap)).slice(0, 10);
+        x.domain([0, d3.max(top10, d => d.gdpPercap)]);
+        y.domain(top10.map(d => d.country));
+
+        const t = svg.transition().duration(750);
+        xAxisGroup.transition(t).call(d3.axisBottom(x).ticks(6, "$,f"));
+        yAxisGroup.transition(t).call(d3.axisLeft(y));
+
+        const bars = g.selectAll("rect.bar")
+          .data(top10, d => d.country);
+
+        bars.join(
+          enter => enter.append("rect").attr("class", "bar").attr("x", 0).attr("y", d => y(d.country)).attr("height", y.bandwidth()).attr("width", 0).attr("fill", d => color(d.continent)).call(enter => enter.transition(t).attr("width", d => x(d.gdpPercap))),
+          update => update.call(update => update.transition(t).attr("y", d => y(d.country)).attr("height", y.bandwidth()).attr("width", d => x(d.gdpPercap)).attr("fill", d => color(d.continent))),
+          exit => exit.call(exit => exit.transition(t).attr("width", 0).remove())
+        )
+        .on("mouseover", (event, d) => {
+          tooltip.style("opacity", 1)
+            .html(`<strong>${d.country}</strong> (${d.continent})<br>Income: $${Math.round(d.gdpPercap).toLocaleString()}`);
+        })
+        .on("mousemove", (event) => {
+          tooltip.style("left", (event.pageX + 12) + "px").style("top", (event.pageY - 28) + "px");
+        })
+        .on("mouseout", () => {tooltip.style("opacity", 0);});
+
+        g.selectAll("rect.bar").select("title").remove();
+        g.selectAll("rect.bar").append("title").text(d => `${d.country}: ${Math.round(d.gdpPercap).toLocaleString()}`);
+      }
+      updateChart(2007);
+
+      d3.select("#btn-2007").on("click", function() {
+        d3.selectAll("button").classed("active", false);
+        d3.select(this).classed("active", true);
+        updateChart(2007);
+      });
+
+      d3.select("#btn-1952").on("click", function() {
+        d3.selectAll("button").classed("active", false);
+        d3.select(this).classed("active", true);
+        updateChart(1952);
+      });
+    });
+  </script>
+</body>
+</html>

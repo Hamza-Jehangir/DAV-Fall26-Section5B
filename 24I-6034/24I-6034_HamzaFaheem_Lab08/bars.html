@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Lab 8 -- Task 2: UN Country Income Comparison</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', 'Tahoma', 'Geneva', 'Verdana', 'sans-serif';
+      margin: 25px 35px;
+      background-color: #f8fafc;
+      color: #1e293b;
+    }
+    h2 {margin-bottom: 6px;}
+    .subtitle {
+      font-size: 13.5px;
+      color: #64748b;
+      margin-bottom: 14px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #ffffff;
+      color: #334155;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    button.active, button:hover {
+      background: #2563eb;
+      color: #ffffff;
+      border-color: #2563eb;
+    }
+    .chart-scroll-box {
+      max-height: 520px;
+      width: 860px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+      padding: 10px;
+    }
+    /* Custom clean scrollbar */
+    .chart-scroll-box::-webkit-scrollbar {width: 10px;}
+    .chart-scroll-box::-webkit-scrollbar-track {background: #f1f5f9; border-radius: 8px;}
+    .chart-scroll-box::-webkit-scrollbar-thumb {background: #94a3b8; border-radius: 8px;}
+    .chart-scroll-box::-webkit-scrollbar-thumb:hover {background: #64748b;}
+    rect.bar {transition: fill 0.15s;}
+    rect.bar:hover {fill: #1d4ed8;}
+    .value-label {font-size: 11px; fill: #475569;}
+  </style>
+</head>
+<body>
+
+  <h2>UN Country Income Comparison</h2>
+  <div class="subtitle" id="status-text">
+    Showing all 142 countries in 2007 (Sorted by GDP per Capita — Scroll down inside the box)
+  </div>
+
+  <div class="toolbar">
+    <button id="btn-all-scroll" class="active">1. All 142 Countries</button>
+    <button id="btn-top10">2. Top 10 Richest Countries</button>
+  </div>
+
+  <div class="chart-scroll-box">
+    <svg id="chart" width="820" height="450"></svg>
+  </div>
+
+  <script>
+    const svg = d3.select("#chart");
+    const margin = { top: 30, right: 75, bottom: 40, left: 110 };
+    const totalWidth = +svg.attr("width");
+    const width = totalWidth - margin.left - margin.right;
+
+    const g = svg.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+    const xAxisTopGroup = g.append("g");
+    const xAxisBottomGroup = g.append("g");
+    const yAxisGroup = g.append("g");
+    d3.csv("dataset/gapminder.csv", d3.autoType).then(rawData => {
+
+      function render(mode) {
+        let data;
+        let innerHeight;
+
+        if (mode === "all-scroll") {
+          data = rawData
+            .filter(d => d.year === 2007)
+            .sort((a, b) => d3.descending(a.gdpPercap, b.gdpPercap));
+          innerHeight = data.length * 24;
+          d3.select("#status-text").text(
+            `Mode 1: Filtered to 2007 (${data.length} <rect> bars). Dynamic height (${innerHeight}px) with scrollbar so every country is readable.`
+          );
+        } else if (mode === "top10"){
+          data = rawData.filter(d => d.year === 2007).sort((a, b) => d3.descending(a.gdpPercap, b.gdpPercap)).slice(0, 10);
+          innerHeight = 380;
+          d3.select("#status-text").text('Mode 2: Top 10 Richest Countries in 2007 (10 <rect> bars). Norway is #1 ($49,357).');
+        } 
+
+        svg.attr("height", innerHeight + margin.top + margin.bottom);
+
+        const x = d3.scaleLinear().domain([0, d3.max(data, d => d.gdpPercap)]).range([0, width]);
+        const y = d3.scaleBand().domain(data.map(d => d.country)).range([0, innerHeight]).padding(0.2);
+
+        xAxisTopGroup.call(d3.axisTop(x).ticks(6, "$,f"));
+        xAxisBottomGroup.attr("transform", `translate(0,${innerHeight})`).call(d3.axisBottom(x).ticks(6, "$,f"));
+        yAxisGroup.call(d3.axisLeft(y));
+
+        g.selectAll("rect.bar").data(data).join("rect").attr("class", "bar").attr("x", 0).attr("y", d => y(d.country)).attr("width", d => x(d.gdpPercap)).attr("height", y.bandwidth()).attr("fill", "steelblue").select("title").remove();
+        g.selectAll("rect.bar").append("title").text(d => `${d.country} (${d.year}): $${Math.round(d.gdpPercap).toLocaleString()}`);
+
+        const labelData = mode === "broken" ? [] : data;
+        g.selectAll("text.value-label").data(labelData).join("text").attr("class", "value-label").attr("x", d => x(d.gdpPercap) + 6).attr("y", d => y(d.country) + y.bandwidth() / 2 + 4).text(d => `$${Math.round(d.gdpPercap).toLocaleString()}`);
+      }
+
+      render("all-scroll");
+      d3.select("#btn-all-scroll").on("click", function() {
+        d3.selectAll(".toolbar button").classed("active", false);
+        d3.select(this).classed("active", true);
+        render("all-scroll");
+      });
+
+      d3.select("#btn-top10").on("click", function() {
+        d3.selectAll(".toolbar button").classed("active", false);
+        d3.select(this).classed("active", true);
+        render("top10");
+      });
+
+    });
+  </script>
+</body>
+</html>
