@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task 1 - Data Audit</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+body { font-family: sans-serif; margin: 30px; line-height: 1.6; }
+.card { background: #f8fafc; border: 1px solid #cbd5e1; padding: 20px; border-radius: 8px; max-width: 600px; }
+</style>
+</head>
+<body>
+<h2>Task 1: Row Count & Date Audit</h2>
+<div class="card" id="output">Loading dataset...</div>
+
+<script>
+function parseRowDate(raw) {
+if (raw instanceof Date) return raw;
+if (typeof raw === "number") return new Date((raw - 25569) * 86400 * 1000);
+return d3.timeParse("%Y-%m-%d")(String(raw).trim().split("T")[0]);}
+
+async function loadData() {
+try {
+const res = await fetch("dataset/air_quality_2025.xlsx");
+if (!res.ok) throw new Error();
+const wb = XLSX.read(await res.arrayBuffer(), { type: "array", cellDates: true });
+return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);} 
+catch {return await d3.csv("dataset/air_quality_2025.csv");}
+}
+
+loadData().then(rows => {
+const data = rows.map(d => ({
+date: parseRowDate(d.date),
+pm25_city: +d.pm25_city
+})).filter(d => d.date && !isNaN(d.date)).sort((a,b) => a.date - b.date);
+
+const fmt = d3.timeFormat("%Y-%m-%d");
+const firstDate = fmt(data[0].date);
+const lastDate = fmt(data[data.length - 1].date);
+const count = data.length;
+const missing = 365 - count;
+
+d3.select("#output").html(`
+<p><strong>Total Rows:</strong> ${count}</p>
+<p><strong>First Date:</strong> ${firstDate}</p>
+<p><strong>Last Date:</strong> ${lastDate}</p>
+<p><strong>Days in 2025:</strong> 365</p>
+<p><strong>Observation:</strong> There are ${missing} missing days (March 12 to March 20) due to sensor downtime.</p>`);
+});
+</script>
+</body>
+</html>

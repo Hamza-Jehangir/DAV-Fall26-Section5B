@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Combined Spatial Encoding Map</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+body { font-family: Arial, sans-serif; }
+#wrapper { display: flex; gap: 20px; }
+#map-container { position: relative; width: 800px; height: 600px; border: 1px solid #ccc; background: #f8f9fa; }
+.country { fill: #e5e5e5; stroke: #fff; stroke-width: 0.5px; }
+.route { stroke: #666; stroke-opacity: 0.6; fill: none; transition: opacity 0.2s; }
+.city-node { stroke: #fff; stroke-width: 1.5px; cursor: pointer; transition: opacity 0.2s; }
+.city-label { font-size: 11px; fill: #222; font-weight: bold; pointer-events: none; text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff; }
+
+#legend { width: 250px; padding: 15px; border: 1px solid #ddd; background: #fff; border-radius: 4px; font-size: 13px; }
+.legend-title { font-weight: bold; margin-bottom: 10px; font-size: 14px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
+.legend-section { margin-bottom: 15px; }
+.legend-row { display: flex; align-items: center; margin-bottom: 5px; }
+.legend-color { width: 16px; height: 16px; border-radius: 50%; margin-right: 10px; border: 1px solid #999; }
+.legend-line { height: 0; margin-right: 10px; background: #666; }
+.tooltip { position: absolute; background: rgba(0,0,0,0.8); color: #fff; padding: 8px; border-radius: 4px; font-size: 12px; pointer-events: none; opacity: 0; }
+</style>
+</head>
+<body>
+
+<h2>Pakistan Cities and Flight Routes</h2>
+<div id="wrapper">
+<div id="map-container"></div>
+
+<div id="legend">
+<div class="legend-title">Map Encodings</div>
+
+<div class="legend-section">
+<strong>1. Position:</strong> Geographical Location (Lat/Lon)
+</div>
+
+<div class="legend-section">
+<strong>2. Circle Size:</strong> City Population
+<div class="legend-row" style="margin-top: 5px;">
+<div class="legend-color" style="width: 8px; height: 8px; background: #999;"></div> Small
+<div class="legend-color" style="width: 20px; height: 20px; background: #999; margin-left: 10px;"></div> Large
+</div>
+</div>
+
+<div class="legend-section">
+<strong>3. Color:</strong> Hub Status
+<div class="legend-row">
+<div class="legend-color" style="background: #e6550d;"></div> Hub (&ge; 4 routes)
+</div>
+<div class="legend-row">
+<div class="legend-color" style="background: #3182bd;"></div> Non-Hub (&lt; 4 routes)
+</div>
+</div>
+
+<div class="legend-section">
+<strong>4. Line Width:</strong> Flights per Week
+<div class="legend-row">
+<div class="legend-line" style="width: 25px; border-top: 1px solid #666;"></div> Few Flights
+</div>
+<div class="legend-row">
+<div class="legend-line" style="width: 25px; border-top: 6px solid #666;"></div> Many Flights
+</div>
+</div>
+</div>
+</div>
+
+<script>
+const width = 800, height = 600;
+
+const svg = d3.select("#map-container").append("svg").attr("width", width).attr("height", height);
+const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+const projection = d3.geoMercator().center([69.3451, 30.3753]).scale(2200).translate([width / 2, height / 2]);
+const path = d3.geoPath().projection(projection);
+
+Promise.all([
+d3.json("dataset/custom.geo.json"),
+d3.csv("dataset/pakistan_cities.csv"),
+d3.csv("dataset/flights.csv")
+]).then(([geoData, cityData, flightData]) => {
+
+const cityMap = new Map();
+const routeDegrees = {};
+
+cityData.forEach(d => {
+d.lat = +d.lat;
+d.lon = +d.lon;
+d.pop = +d.pop;
+d.coords = projection([d.lon, d.lat]);
+routeDegrees[d.name] = 0;
+cityMap.set(d.name, d);});
+
+flightData.forEach(d => {
+d.flights = +d.flights;
+routeDegrees[d.source] = (routeDegrees[d.source] || 0) + 1;
+routeDegrees[d.target] = (routeDegrees[d.target] || 0) + 1;});
+
+cityData.forEach(d => d.isHub = routeDegrees[d.name] >= 4);
+
+const rScale = d3.scaleSqrt().domain([0, d3.max(cityData, d => d.pop)]).range([4, 25]);
+const strokeScale = d3.scaleLinear().domain([0, d3.max(flightData, d => d.flights)]).range([1, 8]);
+const colorScale = d => d.isHub ? "#e6550d" : "#3182bd"; // Orange for hub, Blue for non-hub
+
+svg.append("g").selectAll("path").data(geoData.features).enter()
+.append("path").attr("class", "country").attr("d", path);
+
+const routes = svg.append("g").selectAll("line")
+.data(flightData)
+.enter().append("line")
+.attr("class", "route")
+.attr("x1", d => cityMap.get(d.source).coords[0])
+.attr("y1", d => cityMap.get(d.source).coords[1])
+.attr("x2", d => cityMap.get(d.target).coords[0])
+.attr("y2", d => cityMap.get(d.target).coords[1])
+.attr("stroke-width", d => strokeScale(d.flights));
+
+const cityNodes = svg.append("g").selectAll("g")
+.data(cityData)
+.enter().append("g")
+.attr("transform", d => `translate(${d.coords[0]},${d.coords[1]})`);
+
+cityNodes.append("circle")
+.attr("class", "city-node")
+.attr("r", d => rScale(d.pop))
+.attr("fill", d => colorScale(d));
+
+cityNodes.append("text")
+.attr("class", "city-label")
+.attr("dy", d => -rScale(d.pop) - 4)
+.attr("text-anchor", "middle")
+.text(d => d.name);
+
+const linkedByIndex = {};
+flightData.forEach(d => {
+linkedByIndex[`${d.source},${d.target}`] = true;
+linkedByIndex[`${d.target},${d.source}`] = true;
+});
+
+function isConnected(a, b) {
+return linkedByIndex[`${a.name},${b.name}`] || a.name === b.name;
+}
+
+cityNodes.on("mouseover", (event, d) => {
+routes.style("opacity", o => (o.source === d.name || o.target === d.name) ? 1 : 0.05);
+cityNodes.style("opacity", o => isConnected(d, o) ? 1 : 0.1);
+
+tooltip.style("opacity", 1)
+.html(`<strong>${d.name}</strong><br>Population: ${d.pop.toLocaleString()}<br>Routes: ${routeDegrees[d.name]}<br>Status: ${d.isHub ? "Hub" : "Non-Hub"}`);
+})
+.on("mousemove", event => {
+tooltip.style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 20) + "px");
+})
+.on("mouseleave", () => {
+routes.style("opacity", 0.6);
+cityNodes.style("opacity", 1);
+tooltip.style("opacity", 0);});
+});
+</script>
+</body>
+</html>

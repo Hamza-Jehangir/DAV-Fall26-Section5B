@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pakistan Cities Point Map</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+body { font-family: Arial, sans-serif; }
+
+#map-container { position: relative; width: 800px; height: 600px; border: 1px solid #ccc; }
+
+.country { fill: #e0e0e0; stroke: #fff; stroke-width: 0.5px; }
+
+.city-circle {
+fill: rgba(0, 102, 204, 0.5);
+stroke: #004080;
+stroke-width: 1px;
+cursor: pointer;
+transition: fill 0.2s;}
+
+.city-circle:hover { fill: rgba(255, 69, 0, 0.7); }
+
+.city-label {
+font-size: 11px;
+fill: #333;
+pointer-events: none;
+text-anchor: middle;
+font-weight: bold;
+text-shadow: 1px 1px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff;}
+
+.tooltip {
+position: absolute;
+background: rgba(0, 0, 0, 0.8);
+color: #fff;
+padding: 8px;
+border-radius: 4px;
+font-size: 12px;
+pointer-events: none;
+opacity: 0;
+transition: opacity 0.2s;}
+
+</style>
+</head>
+<body>
+
+<h2>Largest Cities in Pakistan</h2>
+<div id="map-container"></div>
+
+<script>
+const width = 800;
+const height = 600;
+
+const svg = d3.select("#map-container").append("svg").attr("width", width).attr("height", height);
+const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+const projection = d3.geoMercator().center([69.3451, 30.3753]) .scale(2200).translate([width / 2, height / 2]);
+
+const path = d3.geoPath().projection(projection);
+
+Promise.all([
+d3.json("dataset/custom.geo.json"),
+d3.csv("dataset/pakistan_cities.csv")
+]).then(([geoData, cityData]) => {
+
+cityData.forEach(d => {
+d.lat = +d.lat;
+d.lon = +d.lon;
+d.pop = +d.pop;});
+
+const rScale = d3.scaleSqrt().domain([0, d3.max(cityData, d => d.pop)]).range([2, 35]);
+
+svg.append("g")
+.selectAll("path")
+.data(geoData.features)
+.enter().append("path")
+.attr("class", "country")
+.attr("d", path);
+
+svg.append("g")
+.selectAll("circle")
+.data(cityData)
+.enter().append("circle")
+.attr("class", "city-circle")
+.attr("cx", d => projection([d.lon, d.lat])[0])
+.attr("cy", d => projection([d.lon, d.lat])[1])
+.attr("r", d => rScale(d.pop))
+.on("mouseover", (event, d) => {
+tooltip.style("opacity", 1)
+.html(`<strong>${d.name}</strong><br/>Population: ${d.pop.toLocaleString()}`);
+})
+.on("mousemove", event => {
+tooltip.style("left", (event.pageX + 10) + "px")
+.style("top", (event.pageY - 20) + "px");
+})
+.on("mouseleave", () => tooltip.style("opacity", 0));
+
+svg.append("g").selectAll("text")
+.data(cityData.filter(d => d.pop > 1000000)).enter().append("text")
+.attr("class", "city-label")
+.attr("x", d => projection([d.lon, d.lat])[0])
+.attr("y", d => projection([d.lon, d.lat])[1] - rScale(d.pop) - 4)
+.text(d => d.name);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flight Route Network</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+body { font-family: Arial, sans-serif; }
+
+#network-container { border: 1px solid #ccc; width: 800px; height: 600px; }
+
+.node circle {
+fill: #4daf4a;
+stroke: #fff;
+stroke-width: 1.5px;
+cursor: pointer;
+transition: fill 0.2s, opacity 0.2s;}
+
+.node text {
+font-size: 12px;
+pointer-events: none;
+text-shadow: 0 1px 0 #fff, 1px 0 0 #fff, 0 -1px 0 #fff, -1px 0 0 #fff;}
+
+.link {
+stroke: #999;
+stroke-opacity: 0.6;
+transition: opacity 0.2s;}
+</style>
+</head>
+<body>
+
+<h2>Pakistani Cities Flight Network</h2>
+<div id="network-container"></div>
+
+<script>
+const width = 800;
+const height = 600;
+
+const svg = d3.select("#network-container").append("svg")
+.attr("width", width)
+.attr("height", height);
+
+d3.csv("dataset/flights.csv").then(data => {
+const nodesMap = new Map();
+data.forEach(d => {
+d.flights = +d.flights;
+if (!nodesMap.has(d.source)) nodesMap.set(d.source, { id: d.source, degree: 0 });
+if (!nodesMap.has(d.target)) nodesMap.set(d.target, { id: d.target, degree: 0 });
+nodesMap.get(d.source).degree += 1;
+nodesMap.get(d.target).degree += 1;});
+
+const nodes = Array.from(nodesMap.values());
+const links = data.map(d => ({ source: d.source, target: d.target, flights: d.flights }));
+
+const radiusScale = d3.scaleSqrt().domain([0, d3.max(nodes, d => d.degree)]).range([5, 20]);
+const linkWidthScale = d3.scaleLinear().domain([0, d3.max(links, d => d.flights)]).range([1, 8]);
+
+const simulation = d3.forceSimulation(nodes).force("link", d3.forceLink(links).id(d => d.id).distance(100)).force("charge", d3.forceManyBody().strength(-300)).force("center", d3.forceCenter(width / 2, height / 2));
+
+const link = svg.append("g").selectAll("line").data(links).enter().append("line").attr("class", "link").attr("stroke-width", d => linkWidthScale(d.flights));
+
+const node = svg.append("g").selectAll("g").data(nodes).enter().append("g").attr("class", "node").call(d3.drag().on("start", dragstarted)
+.on("drag", dragged)
+.on("end", dragended));
+
+node.append("circle").attr("r", d => radiusScale(d.degree));
+node.append("text").attr("dx", d => radiusScale(d.degree) + 4).attr("dy", ".35em").text(d => d.id);
+
+simulation.on("tick", () => {
+link.attr("x1", d => d.source.x).attr("y1", d => d.source.y).attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+node.attr("transform", d => `translate(${d.x},${d.y})`);
+});
+
+const linkedByIndex = {};
+links.forEach(d => {
+linkedByIndex[`${d.source.id},${d.target.id}`] = 1;
+linkedByIndex[`${d.target.id},${d.source.id}`] = 1;});
+
+function isConnected(a, b) {return linkedByIndex[`${a.id},${b.id}`] || a.id === b.id;}
+
+node.on("mouseover", function(event, d) {
+node.style("opacity", o => isConnected(d, o) ? 1 : 0.1);
+link.style("opacity", o => (o.source.id === d.id || o.target.id === d.id) ? 1 : 0.1);
+}).on("mouseleave", function() {
+node.style("opacity", 1);
+link.style("opacity", 0.6);
+});
+
+function dragstarted(event, d) {
+if (!event.active) simulation.alphaTarget(0.3).restart();
+d.fx = d.x;
+d.fy = d.y;}
+
+function dragged(event, d) {
+d.fx = event.x;
+d.fy = event.y;}
+
+function dragended(event, d) {
+if (!event.active) simulation.alphaTarget(0);
+d.fx = null;
+d.fy = null;}
+});
+</script>
+</body>
+</html>

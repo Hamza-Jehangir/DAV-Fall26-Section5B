@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task 2 - Daily City PM2.5</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+body { font-family: sans-serif; margin: 30px; }
+.badge { display: inline-block; padding: 4px 8px; margin-right: 10px; border-radius: 4px; font-weight: bold; }
+</style>
+</head>
+<body>
+<h2>Task 2: City Centre PM2.5 Daily Trend</h2>
+<div id="stats" style="margin-bottom: 15px;"></div>
+<div id="chart"></div>
+
+<script>
+const margin = {top: 20, right: 30, bottom: 40, left: 50};
+const width = 800 - margin.left - margin.right;
+const height = 350 - margin.top - margin.bottom;
+
+function parseRowDate(raw) {
+if (raw instanceof Date) return raw;
+if (typeof raw === "number") return new Date((raw - 25569) * 86400 * 1000);
+return d3.timeParse("%Y-%m-%d")(String(raw).trim().split("T")[0]);}
+
+async function loadData() {
+try {
+const res = await fetch("dataset/air_quality_2025.xlsx");
+if (!res.ok) throw new Error();
+const wb = XLSX.read(await res.arrayBuffer(), { type: "array", cellDates: true });
+return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);} 
+catch {return await d3.csv("dataset/air_quality_2025.csv");}
+}
+
+loadData().then(rows => {
+const data = rows.map(d => ({
+date: parseRowDate(d.date),
+pm25: +d.pm25_city
+})).filter(d => d.date && !isNaN(d.date)).sort((a,b) => a.date - b.date);
+
+const above15 = data.filter(d => d.pm25 > 15).length;
+const above75 = data.filter(d => d.pm25 > 75).length;
+
+d3.select("#stats").html(`
+<span class="badge" style="background:#e0f2fe; color:#0369a1;">Days > 15 µg/m³: ${above15}</span>
+<span class="badge" style="background:#fee2e2; color:#b91c1c;">Days > 75 µg/m³: ${above75}</span>`);
+
+const svg = d3.select("#chart").append("svg")
+.attr("width", width + margin.left + margin.right)
+.attr("height", height + margin.top + margin.bottom)
+.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+const x = d3.scaleTime().domain(d3.extent(data, d => d.date)).range([0, width]);
+const y = d3.scaleLinear().domain([0, d3.max(data, d => d.pm25) + 20]).range([height, 0]);
+
+svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.timeFormat("%b")));
+svg.append("g").call(d3.axisLeft(y));
+
+[{ val: 15, label: "15 µg/m³", color: "green" }, { val: 75, label: "75 µg/m³", color: "red" }].forEach(r => {
+svg.append("line").attr("x1", 0).attr("x2", width).attr("y1", y(r.val)).attr("y2", y(r.val))
+.attr("stroke", r.color).attr("stroke-dasharray", "4 4");
+svg.append("text").attr("x", width - 5).attr("y", y(r.val) - 5)
+.attr("text-anchor", "end").attr("fill", r.color).attr("font-size", "11px").text(r.label);
+});
+
+const line = d3.line().x(d => x(d.date)).y(d => y(d.pm25));
+svg.append("path").datum(data).attr("fill", "none").attr("stroke", "#2563eb").attr("stroke-width", 1.5).attr("d", line);
+
+const top2 = [...data].sort((a,b) => b.pm25 - a.pm25).slice(0, 2);
+top2.forEach((pt, i) => {
+svg.append("circle").attr("cx", x(pt.date)).attr("cy", y(pt.pm25)).attr("r", 5).attr("fill", "#dc2626");
+svg.append("text").attr("x", x(pt.date) + (i === 0 ? -8 : 8)).attr("y", y(pt.pm25) - 8)
+.attr("text-anchor", i === 0 ? "end" : "start").attr("font-size", "11px").attr("font-weight", "bold")
+.text(`${d3.timeFormat("%b %d")(pt.date)} (${pt.pm25})`);});
+});
+</script>
+</body>
+</html>

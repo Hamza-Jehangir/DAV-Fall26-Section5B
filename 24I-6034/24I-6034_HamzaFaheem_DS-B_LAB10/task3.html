@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task 3 - Running Total Area</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>body { font-family: sans-serif; margin: 30px; }</style>
+</head>
+<body>
+<h2>Task 3: Build-up of Unhealthy Days (> 75 µg/m³)</h2>
+<div id="chart"></div>
+
+<script>
+const margin = {top: 20, right: 40, bottom: 40, left: 50};
+const width = 800 - margin.left - margin.right;
+const height = 350 - margin.top - margin.bottom;
+
+function parseRowDate(raw) {
+if (raw instanceof Date) return raw;
+if (typeof raw === "number") return new Date((raw - 25569) * 86400 * 1000);
+return d3.timeParse("%Y-%m-%d")(String(raw).trim().split("T")[0]);}
+
+async function loadData() {
+try {
+const res = await fetch("dataset/air_quality_2025.xlsx");
+if (!res.ok) throw new Error();
+const wb = XLSX.read(await res.arrayBuffer(), { type: "array", cellDates: true });
+return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+} 
+catch {return await d3.csv("dataset/air_quality_2025.csv");}
+}
+
+loadData().then(rows => {
+const raw = rows.map(d => ({
+date: parseRowDate(d.date),
+pm25: +d.pm25_city})).filter(d => d.date && !isNaN(d.date)).sort((a,b) => a.date - b.date);
+
+let total = 0;
+const data = raw.map(d => {
+if (d.pm25 > 75) total++;
+return {date: d.date, total};});
+
+const svg = d3.select("#chart").append("svg").attr("width", width + margin.left + margin.right)
+.attr("height", height + margin.top + margin.bottom)
+.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+const x = d3.scaleTime().domain(d3.extent(data, d => d.date)).range([0, width]);
+const y = d3.scaleLinear().domain([0, total + 10]).range([height, 0]);
+
+svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.timeFormat("%b")));
+svg.append("g").call(d3.axisLeft(y));
+
+const area = d3.area().x(d => x(d.date)).y0(height).y1(d => y(d.total));
+const line = d3.line().x(d => x(d.date)).y(d => y(d.total));
+
+svg.append("path").datum(data).attr("fill", "#fed7aa").attr("d", area);
+svg.append("path").datum(data).attr("fill", "none").attr("stroke", "#ea580c").attr("stroke-width", 2).attr("d", line);
+
+const last = data[data.length - 1];
+svg.append("circle").attr("cx", x(last.date)).attr("cy", y(last.total)).attr("r", 4).attr("fill", "#ea580c");
+svg.append("text").attr("x", x(last.date) - 8).attr("y", y(last.total) - 8)
+.attr("text-anchor", "end").attr("font-size", "12px").attr("font-weight", "bold")
+.text(`Total: ${last.total} days`);
+});
+</script>
+</body>
+</html>

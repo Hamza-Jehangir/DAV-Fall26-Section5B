@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Course Enrollment Treemap</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+body {font-family: Arial, sans-serif;}
+
+#chart-container {
+position: relative;
+margin: 20px;}
+
+.node rect {
+stroke: #fff;
+stroke-width: 1px;}
+
+.node text {
+font-size: 10px;
+fill: white;
+pointer-events: none;}
+
+.tooltip {
+position: absolute;
+text-align: left;
+padding: 8px;
+font-size: 12px;
+background: rgba(0, 0, 0, 0.8);
+color: #fff;
+border-radius: 4px;
+pointer-events: none;
+opacity: 0;
+transition: opacity 0.2s;}
+
+.legend-item {font-size: 12px;}
+</style>
+</head>
+<body>
+
+<h2>Course Enrollment by Department</h2>
+<div id="legend"></div>
+<div id="chart-container"></div>
+
+<script>
+const width = 1000;
+const height = 600;
+const margin = {top: 10, right: 10, bottom: 10, left: 10};
+
+const svg = d3.select("#chart-container").append("svg").attr("width", width + margin.left + margin.right).attr("height", height + margin.top + margin.bottom).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+const color = d3.scaleOrdinal(d3.schemeTableau10);
+
+d3.csv("dataset/university.csv").then(data => {
+data.forEach(d => {d.students = +d.students;});
+
+const groupedData = d3.group(data, d => d.department);
+
+const hierarchyData = {
+name: "University",
+children: Array.from(groupedData, ([department, courses]) => ({name: department,children: courses}))
+};
+
+const root = d3.hierarchy(hierarchyData).sum(d => d.students).sort((a, b) => b.value - a.value);
+
+d3.treemap().size([width, height]).paddingInner(2).paddingOuter(2)(root);
+
+const departments = Array.from(groupedData.keys());
+color.domain(departments);
+
+const nodes = svg.selectAll("g").data(root.leaves()).enter().append("g").attr("transform", d => `translate(${d.x0},${d.y0})`);
+
+nodes.append("rect").attr("width", d => d.x1 - d.x0).attr("height", d => d.y1 - d.y0).attr("fill", d => color(d.parent.data.name))
+.on("mouseover", (event, d) => {
+tooltip.style("opacity", 1);
+tooltip.html(`
+<strong>Course:</strong> ${d.data.course}<br>
+<strong>Department:</strong> ${d.parent.data.name}<br>
+<strong>Students:</strong> ${d.data.students}
+`);
+})
+
+.on("mousemove", (event) => {
+tooltip
+.style("left", (event.pageX + 15) + "px")
+.style("top", (event.pageY - 20) + "px");
+})
+.on("mouseleave", () => {
+tooltip.style("opacity", 0);
+});
+
+nodes.append("text").selectAll("tspan").data(d => d.data.course.split(/(?=[A-Z][^A-Z])/g)).enter().append("tspan").attr("x", 4).attr("y", (d, i) => 13 + i * 12).text(d => d);
+const legendSvg = d3.select("#legend").append("svg").attr("width", width).attr("height", 40);
+
+const legendNodes = legendSvg.selectAll("g").data(departments).enter().append("g").attr("transform", (d, i) => `translate(${i * 150}, 10)`);
+
+legendNodes.append("rect").attr("width", 15).attr("height", 15).attr("fill", d => color(d));
+legendNodes.append("text").attr("class", "legend-item").attr("x", 20).attr("y", 12).text(d => d);
+
+}).catch(error => {console.error("Error loading the CSV data: ", error);});
+</script>
+</body>
+</html>

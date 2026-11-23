@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task 5 - Monthly Severity Stacked Bar</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>body { font-family: sans-serif; margin: 30px; }</style>
+</head>
+<body>
+<h2>Task 5: Monthly Pollution Levels (Stacked Bar)</h2>
+<div id="chart"></div>
+
+<script>
+const margin = { top: 30, right: 30, bottom: 40, left: 40 };
+const width = 800 - margin.left - margin.right;
+const height = 350 - margin.top - margin.bottom;
+
+function parseRowDate(raw) {
+if (raw instanceof Date) return raw;
+if (typeof raw === "number") return new Date((raw - 25569) * 86400 * 1000);
+return d3.timeParse("%Y-%m-%d")(String(raw).trim().split("T")[0]);}
+
+async function loadData() {
+try {
+const res = await fetch("dataset/air_quality_2025.xlsx");
+if (!res.ok) throw new Error();
+const wb = XLSX.read(await res.arrayBuffer(), { type: "array", cellDates: true });
+return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);} 
+catch {return await d3.csv("dataset/air_quality_2025.csv");}
+}
+
+loadData().then(rows => {
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const levels = ["Low", "Moderate", "High", "Severe"];
+const colors = ["#86efac", "#fde047", "#fb923c", "#ef4444"];
+const colorMap = d3.scaleOrdinal().domain(levels).range(colors);
+
+const roll = d3.rollups(rows, v => {
+const c = { Low: 0, Moderate: 0, High: 0, Severe: 0 };
+v.forEach(d => {
+const p = +d.pm25_city;
+if (p <= 35) c.Low++;
+else if (p <= 75) c.Moderate++;
+else if (p <= 150) c.High++;
+else c.Severe++;});
+return c;}, d => parseRowDate(d.date).getMonth());
+
+const stacked = months.map((m, i) => {
+const entry = roll.find(([mIdx]) => mIdx === i);
+return { month: m, ...(entry ? entry[1] : { Low: 0, Moderate: 0, High: 0, Severe: 0 }) };});
+
+const series = d3.stack().keys(levels)(stacked);
+
+const svg = d3.select("#chart").append("svg").attr("width", width + margin.left + margin.right).attr("height", height + margin.top + margin.bottom).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+const x = d3.scaleBand().domain(months).range([0, width]).padding(0.25);
+const y = d3.scaleLinear().domain([0, 32]).range([height, 0]);
+
+svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+svg.append("g").call(d3.axisLeft(y).ticks(6));
+
+svg.selectAll("g.layer").data(series).join("g").attr("class", "layer").attr("fill", d => colorMap(d.key)).selectAll("rect").data(d => d).join("rect").attr("x", d => x(d.data.month)).attr("y", d => y(d[1])).attr("height", d => y(d[0]) - y(d[1])).attr("width", x.bandwidth());
+
+const legend = svg.append("g").attr("transform", `translate(10, -20)`);
+levels.forEach((l, i) => {
+legend.append("rect").attr("x", i * 110).attr("y", 0).attr("width", 12).attr("height", 12).attr("fill", colorMap(l));
+legend.append("text").attr("x", i * 110 + 16).attr("y", 10).attr("font-size", "12px").text(l);});
+});
+</script>
+</body>
+</html>

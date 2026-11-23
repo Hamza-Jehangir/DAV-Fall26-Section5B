@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task 7 - Monthly Band & Mean</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>body { font-family: sans-serif; margin: 30px; }</style>
+</head>
+<body>
+<h2>Task 7: Monthly Min-Max Band & Mean</h2>
+<div id="chart"></div>
+
+<script>
+const margin = { top: 20, right: 30, bottom: 40, left: 50 };
+const width = 800 - margin.left - margin.right;
+const height = 350 - margin.top - margin.bottom;
+
+function parseRowDate(raw) {
+if (raw instanceof Date) return raw;
+if (typeof raw === "number") return new Date((raw - 25569) * 86400 * 1000);
+return d3.timeParse("%Y-%m-%d")(String(raw).trim().split("T")[0]);}
+
+async function loadData() {
+try {
+const res = await fetch("dataset/air_quality_2025.xlsx");
+if (!res.ok) throw new Error();
+const wb = XLSX.read(await res.arrayBuffer(), { type: "array", cellDates: true });
+return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+} 
+catch {return await d3.csv("dataset/air_quality_2025.csv");}}
+
+loadData().then(rows => {
+const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const data = rows.map(d => ({
+date: parseRowDate(d.date),
+pm25: +d.pm25_city
+})).filter(d => d.date && !isNaN(d.date));
+
+const stats = d3.rollups(data, v => ({
+min: d3.min(v, d => d.pm25),
+max: d3.max(v, d => d.pm25),
+mean: d3.mean(v, d => d.pm25)
+}), d => d.date.getMonth()).map(([mIdx, s]) => ({ month: months[mIdx], mIdx, ...s })).sort((a,b) => a.mIdx - b.mIdx);
+
+const svg = d3.select("#chart").append("svg").attr("width", width + margin.left + margin.right).attr("height", height + margin.top + margin.bottom).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+const x = d3.scalePoint().domain(months).range([20, width - 20]);
+const y = d3.scaleLinear().domain([0, d3.max(stats, d => d.max) + 20]).range([height, 0]);
+
+svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x));
+svg.append("g").call(d3.axisLeft(y));
+
+const area = d3.area().x(d => x(d.month)).y0(d => y(d.min)).y1(d => y(d.max)).curve(d3.curveMonotoneX);
+const line = d3.line().x(d => x(d.month)).y(d => y(d.mean)).curve(d3.curveMonotoneX);
+
+svg.append("path").datum(stats).attr("fill", "#fed7aa").attr("opacity", 0.6).attr("d", area);
+svg.append("path").datum(stats).attr("fill", "none").attr("stroke", "#c2410c").attr("stroke-width", 2.5).attr("d", line);
+
+stats.forEach(d => {svg.append("circle").attr("cx", x(d.month)).attr("cy", y(d.mean)).attr("r", 4).attr("fill", "#c2410c");});
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Task 8 - Moving Average & Gaps</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>body { font-family: sans-serif; margin: 30px; }</style>
+</head>
+<body>
+<h2>Task 8: 7-Day Moving Average & Offline Sensor Gap</h2>
+<div id="chart"></div>
+
+<script>
+const margin = { top: 20, right: 30, bottom: 40, left: 50 };
+const width = 800 - margin.left - margin.right;
+const height = 350 - margin.top - margin.bottom;
+
+function parseRowDate(raw) {
+if (raw instanceof Date) return raw;
+if (typeof raw === "number") return new Date((raw - 25569) * 86400 * 1000);
+return d3.timeParse("%Y-%m-%d")(String(raw).trim().split("T")[0]);}
+
+async function loadData() {
+try {
+const res = await fetch("dataset/air_quality_2025.xlsx");
+if (!res.ok) throw new Error();
+const wb = XLSX.read(await res.arrayBuffer(), { type: "array", cellDates: true });
+return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);} 
+catch {return await d3.csv("dataset/air_quality_2025.csv");}}
+
+loadData().then(rows => {
+const data = rows.map(d => ({
+date: parseRowDate(d.date),
+pm25: +d.pm25_city})).filter(d => d.date && !isNaN(d.date)).sort((a,b) => a.date - b.date);
+
+const segments = [];
+let curr = [];
+data.forEach((d, i) => {
+if (i > 0 && d3.timeDay.count(data[i-1].date, d.date) > 1) {
+segments.push(curr);
+curr = [];}
+curr.push(d);});
+if (curr.length) segments.push(curr);
+
+segments.forEach(seg => {
+seg.forEach((d, idx) => {
+const slice = seg.slice(Math.max(0, idx - 6), idx + 1);
+d.ma7 = d3.mean(slice, item => item.pm25);});});
+
+const svg = d3.select("#chart").append("svg").attr("width", width + margin.left + margin.right).attr("height", height + margin.top + margin.bottom).append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+
+const x = d3.scaleTime().domain(d3.extent(data, d => d.date)).range([0, width]);
+const y = d3.scaleLinear().domain([0, d3.max(data, d => d.pm25) + 15]).range([height, 0]);
+
+svg.append("g").attr("transform", `translate(0,${height})`).call(d3.axisBottom(x).tickFormat(d3.timeFormat("%b")));
+svg.append("g").call(d3.axisLeft(y));
+
+const gapStart = d3.timeParse("%Y-%m-%d")("2025-03-11");
+const gapEnd = d3.timeParse("%Y-%m-%d")("2025-03-21");
+const missingDays = d3.timeDay.count(gapStart, gapEnd) - 1;
+
+svg.append("rect").attr("x", x(gapStart)).attr("y", 0).attr("width", x(gapEnd) - x(gapStart)).attr("height", height).attr("fill", "#fee2e2");
+
+svg.append("text").attr("x", (x(gapStart) + x(gapEnd)) / 2).attr("y", 25).attr("text-anchor", "middle").attr("fill", "#b91c1c").attr("font-size", "11px").attr("font-weight", "bold").text("No data: sensor offline");
+
+svg.append("text").attr("x", (x(gapStart) + x(gapEnd)) / 2).attr("y", 40).attr("text-anchor", "middle").attr("fill", "#b91c1c").attr("font-size", "10px").text(`(${missingDays} missing days)`);
+
+const rawLine = d3.line().x(d => x(d.date)).y(d => y(d.pm25));
+const maLine = d3.line().x(d => x(d.date)).y(d => y(d.ma7));
+
+segments.forEach(seg => {
+svg.append("path").datum(seg).attr("fill", "none").attr("stroke", "#94a3b8").attr("stroke-width", 1).attr("d", rawLine);
+svg.append("path").datum(seg).attr("fill", "none").attr("stroke", "#1e3a8a").attr("stroke-width", 2.2).attr("d", maLine);});
+});
+</script>
+</body>
+</html>

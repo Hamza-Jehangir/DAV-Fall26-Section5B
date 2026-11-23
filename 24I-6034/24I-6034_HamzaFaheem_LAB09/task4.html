@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Population Choropleth</title>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<style>
+
+body { font-family: Arial, sans-serif; }
+
+.country {
+stroke: #fff;
+stroke-width: 0.5px;
+transition: fill 0.2s, stroke-width 0.2s;}
+
+.country:hover {
+stroke: #000;
+stroke-width: 1.5px;}
+
+.tooltip {
+position: absolute;
+background: rgba(0, 0, 0, 0.8);
+color: #fff;
+padding: 8px;
+border-radius: 4px;
+font-size: 13px;
+pointer-events: none;
+opacity: 0;
+transition: opacity 0.2s;}
+
+.legend text { font-size: 12px; }
+</style>
+</head>
+<body>
+
+<h2>Global Population Map</h2>
+<div id="map-container"></div>
+
+<script>
+const width = 960;
+const height = 600;
+
+const svg = d3.select("#map-container").append("svg").attr("width", width).attr("height", height);
+
+const tooltip = d3.select("body").append("div").attr("class", "tooltip");
+const projection = d3.geoNaturalEarth1()
+.scale(160)
+.translate([width / 2, height / 2]);
+const path = d3.geoPath().projection(projection);
+
+Promise.all([
+d3.json("dataset/custom.geo.json"),
+d3.csv("dataset/population.csv")
+]).then(([geoData, popData]) => {
+
+const popById = {};
+const countryNames = {};
+popData.forEach(d => {
+popById[d.id] = +d.population_millions;
+countryNames[d.id] = d.country;
+});
+
+const maxPop = d3.max(popData, d => +d.population_millions);
+const colorScale = d3.scaleSequentialSqrt(d3.interpolateYlOrBr).domain([0, maxPop]);
+
+svg.append("g")
+.selectAll("path")
+.data(geoData.features)
+.enter().append("path")
+.attr("class", "country")
+.attr("d", path)
+.attr("fill", d => {
+const code = d.properties.iso_a3 || d.properties.adm0_a3;
+return popById[code] !== undefined ? colorScale(popById[code]) : "#e0e0e0";
+})
+
+.on("mouseover", function(event, d) {
+const code = d.properties.iso_a3 || d.properties.adm0_a3;
+const name = countryNames[code] || d.properties.name;
+const pop = popById[code] !== undefined ? popById[code] + " M" : "No Data";
+
+tooltip.style("opacity", 1)
+.html(`<strong>${name}</strong><br/>Population: ${pop}`);
+
+d3.select(this)
+.style("stroke", "#000")
+.style("stroke-width", "2px");})
+.on("mousemove", event => {
+tooltip
+.style("left", (event.pageX + 15) + "px")
+.style("top", (event.pageY - 20) + "px");
+})
+.on("mouseleave", function() {
+tooltip.style("opacity", 0);
+d3.select(this)
+.style("stroke", "#fff")
+.style("stroke-width", "0.5px");
+});
+
+const legendWidth = 200;
+const legendHeight = 15;
+const defs = svg.append("defs");
+const linearGradient = defs.append("linearGradient").attr("id", "legend-gradient");
+
+linearGradient.selectAll("stop")
+.data(d3.range(0, 1.05, 0.05))
+.enter().append("stop")
+.attr("offset", d => d * 100 + "%")
+.attr("stop-color", d => colorScale(d * maxPop));
+
+const legend = svg.append("g").attr("class", "legend").attr("transform", `translate(20, ${height - 50})`);
+
+legend.append("rect").attr("width", legendWidth).attr("height", legendHeight).style("fill", "url(#legend-gradient)");
+legend.append("text").attr("x", 0).attr("y", legendHeight + 15).text("0M");
+legend.append("text").attr("x", legendWidth).attr("y", legendHeight + 15).attr("text-anchor", "end").text(`${Math.round(maxPop)}M`);
+legend.append("text").attr("x", legendWidth / 2).attr("y", -5).attr("text-anchor", "middle").text("Population (Millions)");
+});
+</script>
+</body>
+</html>
